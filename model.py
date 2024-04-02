@@ -22,12 +22,12 @@ class ResidualBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(output_channels)
 
         self.shortcut = nn.Sequential()
-        if stride != 1 or input_channels != self.expansion*output_channels:
+        if stride != 1 or input_channels != output_channels:
             # Adjusting if the dimensionality changes after the conv networks.
             self.shortcut = nn.Sequential(
-                nn.Conv2d(input_channels, self.expansion*output_channels,
+                nn.Conv2d(input_channels, output_channels,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*output_channels)
+                nn.BatchNorm2d(output_channels)
             )
 
     def forward(self, x):
@@ -54,17 +54,17 @@ class ResNet(nn.Module):
             layer_list.append(self._make_layer(block, self.input_channels*(2**i), block_param, stride=stride))
         self.layers = nn.Sequential(*layer_list)
         ll = len(self.layers)
-        self.linear = nn.Linear(block.expansion*self.input_channels*(2**(ll+1)), num_classes)
+        self.linear = nn.Linear(self.channels, num_classes)
 
     def _make_layer(self, block, output_channels, num_blocks, stride):
         layers = []
         layers.append(block(self.channels, output_channels, stride))
-        self.channels = output_channels * block.expansion
+        self.channels = output_channels
 
         # Subsequent blocks have stride=1.
         for _ in range(1, num_blocks):
             layers.append(block(self.channels, output_channels))
-            self.channels = output_channels * block.expansion
+            self.channels = output_channels
         return nn.Sequential(*layers)
 
     def forward(self, x):
