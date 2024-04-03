@@ -41,6 +41,7 @@ class ResidualBlock(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10):
         super(ResNet, self).__init__()
+        assert(len(num_blocks) in [3, 4])
         self.input_channels = 64
         self.channels = 64
 
@@ -53,8 +54,13 @@ class ResNet(nn.Module):
             stride = 1 if i == 0 else 2
             layer_list.append(self._make_layer(block, self.input_channels*(2**i), block_param, stride=stride))
         self.layers = nn.Sequential(*layer_list)
-        ll = len(self.layers)
-        self.linear = nn.Linear(self.channels, num_classes)
+        # Hack to make this work with 3 or 4 blocks.
+        output_channels = self.channels if len(num_blocks) == 4 else 4*self.channels
+        self.linear = nn.Linear(output_channels, num_classes)
+
+    @property
+    def parameter_count(self):
+        return sum(p.numel() for p in self.parameters())
 
     def _make_layer(self, block, output_channels, num_blocks, stride):
         layers = []
@@ -78,11 +84,3 @@ class ResNet(nn.Module):
 
 def ResNet18():
     return ResNet(ResidualBlock, [2, 2, 2])
-
-
-def test():
-    net = ResNet18()
-    y = net(torch.randn(1, 3, 32, 32))
-    print(y.size())
-
-# test()
