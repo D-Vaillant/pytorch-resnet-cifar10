@@ -2,3 +2,5 @@ venv/
 data/
 checkpoint/
 *.pyc
+*.csv
+.DS_Store

@@ -65,7 +65,7 @@ if args.resume:
     checkpoint = torch.load('./checkpoint/ckpt.pth')
     block_info = checkpoint.get('layers')
 else:
-    block_info = [4, 4, 3]
+    block_info = [5, 4, 3]
 
 # Model
 print('==> Building model..')
