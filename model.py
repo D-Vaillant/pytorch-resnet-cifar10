@@ -118,10 +118,6 @@ class ResNet(nn.Module):
         return nn.Sequential(self.conv1, self.bn1, self.resnet_act_fn)
 
     @property
-    def trunk(self):
-        return nn.Sequential(self.conv1, self.bn1, self.resnet_act_fn)
-
-    @property
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())
 
