@@ -82,14 +82,15 @@ class ResNet(nn.Module):
         if self.block_act_fn is None:
             self.block_act_fn = nn.ReLU()
 
-        assert(len(num_blocks) in [3, 4])
-        self.input_channels = channels
+        # Note: Different block structures aren't supported just yet.
+        # They can be hacked in by just multiplying the linear output dimension by 4.
+        assert(len(num_blocks) == 4)
         self.channels = channels
 
         # k = 3, p = 1
-        self.conv1 = nn.Conv2d(image_channels, self.input_channels, kernel_size=3,
+        self.conv1 = nn.Conv2d(image_channels, self.channels, kernel_size=3,
                                stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(self.input_channels)
+        self.bn1 = nn.BatchNorm2d(self.channels)
         layer_list = []
 
         for i, block_count in enumerate(num_blocks):
@@ -109,7 +110,12 @@ class ResNet(nn.Module):
             self.channels = output_channels
 
         self.layers = nn.Sequential(*layer_list)
-        self.linear = nn.Linear(output_channels, num_classes)
+        # In 3-blocks, this should be 4 * self.channels.
+        self.linear = nn.Linear(self.channels, num_classes)
+
+    @property
+    def trunk(self):
+        return nn.Sequential(self.conv1, self.bn1, self.resnet_act_fn)
 
     @property
     def trunk(self):
@@ -131,16 +137,18 @@ class ResNet(nn.Module):
         return out
 
 
-class ValiantResNet(ResNet):
+class ELUResNet(ResNet):
     resnet_act_fn = nn.ELU()
     block_act_fn = nn.ELU()
 
 
 class FatResNet(ResNet):
-    def __init__(self, *args, **kwargs):
-        super(FatResNet, self).__init__(*args, **kwargs)
-        self.conv1 = nn.Conv2d(3, self.input_channels, kernel_size=5,
-                        stride=1, padding=2, bias=False)
-
-def ValiantResNet222():
-    return ValiantResNet(ResidualBlock, [2, 2, 2])
+    """ResNet that uses a 5x5 kernel at the beginning."""
+    def __init__(self, *args, image_channels=3, channels=64, **kwargs):
+        super(FatResNet, self).__init__(*args,
+                                        image_channels=image_channels,
+                                        channels=channels,
+                                        **kwargs)
+        self.conv1 = nn.Conv2d(image_channels, channels,
+                               kernel_size=5, stride=1, padding=2, bias=False)
+        self.bn1 = nn.BatchNorm2d(channels)
