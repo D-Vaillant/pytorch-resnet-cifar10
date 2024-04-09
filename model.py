@@ -84,7 +84,8 @@ class ResNet(nn.Module):
 
         # Note: Different block structures aren't supported just yet.
         # They can be hacked in by just multiplying the linear output dimension by 4.
-        assert(len(num_blocks) == 4)
+        block_count = len(num_blocks)
+        assert(block_count in [3, 4])
         self.channels = channels
 
         # k = 3, p = 1
@@ -111,7 +112,8 @@ class ResNet(nn.Module):
 
         self.layers = nn.Sequential(*layer_list)
         # In 3-blocks, this should be 4 * self.channels.
-        self.linear = nn.Linear(self.channels, num_classes)
+        scale = 4 if block_count == 3 else 1
+        self.linear = nn.Linear(scale*self.channels, num_classes)
 
     @property
     def trunk(self):
@@ -136,6 +138,11 @@ class ResNet(nn.Module):
 class ELUResNet(ResNet):
     resnet_act_fn = nn.ELU()
     block_act_fn = nn.ELU()
+
+
+class SiLUResNet(ResNet):
+    resnet_act_fn = nn.SiLU()
+    block_act_fn = nn.SiLU()
 
 
 class FatResNet(ResNet):

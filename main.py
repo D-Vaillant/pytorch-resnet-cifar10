@@ -7,151 +7,201 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
 import torchvision
-import torchvision.transforms as transforms
+import torchvision.transforms.v2 as transforms
 
 import os
 import argparse
+import logging
+import json
 
 from model import *
 from utils import progress_bar
 
+import datetime
 
-parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
-parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
-parser.add_argument('--resume', '-r', action='store_true',
-                    help='resume from checkpoint')
-args = parser.parse_args()
-
-if torch.backends.mps.is_available():
-    device = 'mps'
-else:
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-best_acc = 0  # best test accuracy
-start_epoch = 0  # start from epoch 0 or last checkpoint epoch
-
-# Data
-print('==> Preparing data..')
-# Data augmentation scheme.
-transform_train = transforms.Compose([
-    transforms.RandomCrop(32, padding=4),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-
-transform_test = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-
-trainset = torchvision.datasets.CIFAR10(
-    root='./data', train=True, download=True, transform=transform_train)
-trainloader = torch.utils.data.DataLoader(
-    trainset, batch_size=128, shuffle=True, num_workers=2)
-
-testset = torchvision.datasets.CIFAR10(
-    root='./data', train=False, download=True, transform=transform_test)
-testloader = torch.utils.data.DataLoader(
-    testset, batch_size=100, shuffle=False, num_workers=2)
-
-classes = ('plane', 'car', 'bird', 'cat', 'deer',
-           'dog', 'frog', 'horse', 'ship', 'truck')
-
-if args.resume:
-    # Load checkpoint.
-    print('==> Resuming from checkpoint..')
-    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt.pth')
-    block_info = checkpoint.get('layers')
-else:
-    block_info = [5, 4, 3]
-
-# Model
-print('==> Building model..')
-net = ResNet(ResidualBlock, block_info)
-net = net.to(device)
-if device == 'cuda':
-    net = torch.nn.DataParallel(net)
-    cudnn.benchmark = True
-
-if args.resume:
-    net.load_state_dict(checkpoint['net'])
-    best_acc = checkpoint['acc']
-    start_epoch = checkpoint['epoch']
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr,
-                      momentum=0.9, weight_decay=5e-4)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+def get_unique_identifier():
+    current_datetime = datetime.datetime.now()
+    unique_identifier = current_datetime.strftime("%Y%m%d_%H%M%S")
+    return unique_identifier
 
 
-# Training
-def train(epoch):
-    print('\nEpoch: %d' % epoch)
-    net.train()
-    train_loss = 0
-    correct = 0
-    total = 0
-    for batch_idx, (inputs, targets) in enumerate(trainloader):
-        inputs, targets = inputs.to(device), targets.to(device)
-        optimizer.zero_grad()
-        outputs = net(inputs)
-        loss = criterion(outputs, targets)
-        loss.backward()
-        optimizer.step()
-
-        train_loss += loss.item()
-        _, predicted = outputs.max(1)
-        total += targets.size(0)
-        correct += predicted.eq(targets).sum().item()
-
-        # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
-        #       % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
-
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                     % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+    parser.add_argument('--epochs', '-e', default=50, type=int, help='epochs to run. in addition.')
+    parser.add_argument('--lr', default=3e-4, type=float, help='learning rate')
+    parser.add_argument('--checkpoint', '-c', default=None,
+                        help='checkpoint filename to load from. stored in checkpoint/.')
+    return parser
 
 
-def test(epoch):
-    global best_acc
-    net.eval()
-    test_loss = 0
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(testloader):
-            inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs)
-            loss = criterion(outputs, targets)
+class CIFAR10Trainer:
+    def __init__(self, epochs: int,
+                 learning_rate: float,
+                 model: nn.Module,
+                 model_args: dict,
+                 checkpoint=None):
+        self.epochs = epochs
+        if torch.backends.mps.is_available():
+            self.device = 'mps'
+        else:
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.best_acc = 0  # best test accuracy
+        self.start_epoch = 0  # start from epoch 0 or last checkpoint epoch
+        self.train_losses = []
+        self.train_accuracies = []
+        self.test_losses = []
+        self.test_accuracies = []
+        self.run_name = get_unique_identifier()
 
-            test_loss += loss.item()
+        self.prepare_data()
+        self.build_model(self.device, model_args, checkpoint=checkpoint)
+        self.define_criterion_optimizer(learning_rate=learning_rate)
+
+    def prepare_data(self):
+        logging.info('==> Preparing data..')
+        # Data augmentation scheme.
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            # transforms.RandomRotation(15),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        self.trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=128, shuffle=True, num_workers=2)
+            
+        self.testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+        self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=100, shuffle=False, num_workers=2)
+        
+        self.classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+    def build_model(self, device, model_args, checkpoint=None):
+        logging.info('==> Building model..')
+        self.net = ResNet(ResidualBlock, **model_args)
+        if checkpoint is not None:  # We're passing in a checkpoint. Let's load from it.
+            logging.info('==> Resuming from checkpoint..')
+            assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+            checkpoint = torch.load(f'./checkpoint/{checkpoint}.pth')
+            # Fix for loading CUDA-trained nets on non-CUDA devices.
+            checkpoint['net'] = {k.replace("module.", ""): v for k, v in checkpoint['net'].items()}
+            # self.block_info = checkpoint.get('layers')
+            self.net = self.net.to(self.device)
+            self.net.load_state_dict(checkpoint['net'])
+            self.best_acc = checkpoint['acc']
+            self.start_epoch = checkpoint['epoch']
+        if device == 'cuda':
+            self.net = torch.nn.DataParallel(self.net)
+            cudnn.benchmark = True
+        self.net = self.net.to(device)
+
+    def define_criterion_optimizer(self, learning_rate):
+        self.criterion = nn.CrossEntropyLoss()
+        self.optimizer = optim.Adam(self.net.parameters(),
+                                    lr=learning_rate)
+        # self.optimizer = optim.SGD(self.net.parameters(), lr=learning_rate, momentum=0.9, weight_decay=5e-4)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=200)
+
+    # Training
+    def train(self, epoch):
+        print('\nEpoch: %d' % epoch)
+        self.net.train()
+        train_loss = 0
+        correct = 0
+        total = 0
+        for batch_idx, (inputs, targets) in enumerate(self.trainloader):
+            inputs, targets = inputs.to(self.device), targets.to(self.device)
+            self.optimizer.zero_grad()
+            outputs = self.net(inputs)
+            loss = self.criterion(outputs, targets)
+            loss.backward()
+            self.optimizer.step()
+
+            train_loss += loss.item()
             _, predicted = outputs.max(1)
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
-            # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            #   % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-            progress_bar(batch_idx, len(testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                         % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
-    # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc:
-        print('Saving..')
-        state = {
-            'net': net.state_dict(),
-            'acc': acc,
-            'epoch': epoch,
-            'layers': block_info
+            # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            #       % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+            progress_bar(batch_idx, len(self.trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                        % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+        self.train_losses.append(train_loss/(batch_idx+1))
+        self.train_accuracies.append(100.*correct/total)
+
+    def test(self, epoch):
+        self.net.eval()
+        test_loss = 0
+        correct = 0
+        total = 0
+        with torch.no_grad():
+            for batch_idx, (inputs, targets) in enumerate(self.testloader):
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                outputs = self.net(inputs)
+                loss = self.criterion(outputs, targets)
+
+                test_loss += loss.item()
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+                # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                #   % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+                progress_bar(batch_idx, len(self.testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                            % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+        # Save checkpoint.
+        acc = 100.*correct/total
+        if acc > self.best_acc:
+            logging.info('Saving..')
+            state = {
+                'net': self.net.state_dict(),
+                'acc': acc,
+                'epoch': epoch,
+                # 'model_args': self.model_args
+            }
+            if not os.path.isdir('checkpoint'):
+                os.mkdir('checkpoint')
+            torch.save(state, f'./checkpoint/ckpt_{self.run_name}.pth')
+            self.best_acc = acc
+
+    def export_results(self):
+        results = {
+            'train_losses': self.train_losses,
+            'train_accuracies': self.train_accuracies,
+            'test_losses': self.test_losses,
+            'test_accuracies': self.test_accuracies
         }
-        if not os.path.isdir('checkpoint'):
-            os.mkdir('checkpoint')
-        torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
+        
+        if not os.path.isdir('results'):
+            os.mkdir('results')
+        
+        with open(f'./results/training_results_{self.run_name}.json', 'w') as f:
+            json.dump(results, f)
+        
+        print(f'Training results exported to ./results/training_results_{self.run_name}.json')
+
+    def run(self):
+        for epoch in range(self.start_epoch, self.start_epoch+self.epochs):
+            self.train(epoch)
+            self.test(epoch)
+            self.scheduler.step()
+        
+        self.export_results()
 
 
 if __name__ == "__main__":
-    for epoch in range(start_epoch, start_epoch+200):
-        train(epoch)
-        test(epoch)
-        scheduler.step()
+    parser = create_parser()
+    args = parser.parse_args()
+
+    trainer = CIFAR10Trainer(model=SiLUResNet, model_args={'num_blocks': [5, 4, 3], 'channels': 64},
+                             epochs=args.epochs, learning_rate=args.lr, checkpoint=args.checkpoint)
+    trainer.run()
