@@ -157,6 +157,9 @@ class CIFAR10Trainer:
                 #   % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
                 progress_bar(batch_idx, len(self.testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+        
+        self.test_losses.append(test_loss/(batch_idx+1))
+        self.test_accuracies(100.*correct/total)
 
         # Save checkpoint.
         acc = 100.*correct/total
