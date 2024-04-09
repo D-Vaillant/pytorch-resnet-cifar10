@@ -51,6 +51,7 @@ class CIFAR10Trainer:
         self.train_accuracies = []
         self.test_losses = []
         self.test_accuracies = []
+        self.model_args = model_args
         self.run_name = get_unique_identifier()
 
         self.prepare_data()
