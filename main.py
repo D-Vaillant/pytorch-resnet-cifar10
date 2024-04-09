@@ -63,7 +63,7 @@ class CIFAR10Trainer:
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            # transforms.RandomRotation(15),
+            transforms.RandomRotation(10),
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -163,7 +163,7 @@ class CIFAR10Trainer:
                             % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
         
         self.test_losses.append(test_loss/(batch_idx+1))
-        self.test_accuracies(100.*correct/total)
+        self.test_accuracies.append(100.*correct/total)
 
         # Save checkpoint.
         acc = 100.*correct/total
