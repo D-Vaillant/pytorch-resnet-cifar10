@@ -54,7 +54,7 @@ class CIFAR10Trainer:
         self.run_name = get_unique_identifier()
 
         self.prepare_data()
-        self.build_model(self.device, model_args, checkpoint=checkpoint)
+        self.build_model(model, self.device, model_args, checkpoint=checkpoint)
         self.define_criterion_optimizer(learning_rate=learning_rate)
 
     def prepare_data(self):
@@ -66,13 +66,13 @@ class CIFAR10Trainer:
             # transforms.RandomRotation(15),
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
 
         transform_test = transforms.Compose([
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ])
 
         self.trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
@@ -83,15 +83,19 @@ class CIFAR10Trainer:
         
         self.classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-    def build_model(self, device, model_args, checkpoint=None):
+    def build_model(self, model, device, model_args, checkpoint=None):
         logging.info('==> Building model..')
-        self.net = ResNet(ResidualBlock, **model_args)
+        self.net = model(ResidualBlock, **model_args)
         if checkpoint is not None:  # We're passing in a checkpoint. Let's load from it.
             logging.info('==> Resuming from checkpoint..')
             assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
             checkpoint = torch.load(f'./checkpoint/{checkpoint}.pth')
             # Fix for loading CUDA-trained nets on non-CUDA devices.
             checkpoint['net'] = {k.replace("module.", ""): v for k, v in checkpoint['net'].items()}
+            try:
+                assert model.__class__.__name__ == checkpoint['name'], 'Model names do not match.'
+            except KeyError:
+                pass  # Older checkpoint without a saved model name. It's fine.
             # self.block_info = checkpoint.get('layers')
             self.net = self.net.to(self.device)
             self.net.load_state_dict(checkpoint['net'])
@@ -169,7 +173,8 @@ class CIFAR10Trainer:
                 'net': self.net.state_dict(),
                 'acc': acc,
                 'epoch': epoch,
-                # 'model_args': self.model_args
+                'name': self.net.__class__.__name__,
+                'model_args': self.model_args
             }
             if not os.path.isdir('checkpoint'):
                 os.mkdir('checkpoint')
