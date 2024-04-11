@@ -77,7 +77,7 @@ class ResNet(nn.Module):
     block_act_fn = None
 
     def __init__(self, block, num_blocks, num_classes=10,
-                 image_channels=3, channels=64):
+                 image_channels=3, channels=64, scale_fix: bool=None):
         super(ResNet, self).__init__()
         if self.block_act_fn is None:
             self.block_act_fn = nn.ReLU()
@@ -112,7 +112,8 @@ class ResNet(nn.Module):
 
         self.layers = nn.Sequential(*layer_list)
         # In 3-blocks, this should be 4 * self.channels.
-        scale = 4 if block_count == 3 else 1
+        if scale is None:
+            scale = 4 if block_count == 3 else 1
         self.linear = nn.Linear(scale*self.channels, num_classes)
 
     @property
@@ -145,7 +146,23 @@ class SiLUResNet(ResNet):
     block_act_fn = nn.SiLU()
 
 
+class MaxPoolResNet(SiLUResNet):
+    def forward(self, x):
+        # Trunk is the first conv layer, batch, and activation function.
+        out = self.trunk(x)
+        out = self.layers(out)
+        # Hyperparameter: Pooling strategy.
+        out = F.max_pool2d(out, 4)
+        # out = F.avg_pool2d(out, 4)
+        out = out.view(out.size(0), -1)
+        out = self.linear(out)
+        return out
+
+
 class FatResNet(ResNet):
+    resnet_act_fn = nn.SiLU()
+    block_act_fn = nn.SiLU()
+
     """ResNet that uses a 5x5 kernel at the beginning."""
     def __init__(self, *args, image_channels=3, channels=64, **kwargs):
         super(FatResNet, self).__init__(*args,
