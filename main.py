@@ -15,7 +15,11 @@ import logging
 import json
 
 from model import *
-from utils import progress_bar
+
+USE_PROGRESS_BAR = False
+
+if USE_PROGRESS_BAR:
+    from utils import progress_bar
 
 import datetime
 
@@ -64,7 +68,6 @@ class CIFAR10Trainer:
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomRotation(10),
             transforms.ToImage(),
             transforms.ToDtype(torch.float32, scale=True),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
@@ -111,7 +114,6 @@ class CIFAR10Trainer:
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = optim.Adam(self.net.parameters(),
                                     lr=learning_rate)
-        # self.optimizer = optim.SGD(self.net.parameters(), lr=learning_rate, momentum=0.9, weight_decay=5e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=200)
 
     # Training
@@ -134,11 +136,13 @@ class CIFAR10Trainer:
             total += targets.size(0)
             correct += predicted.eq(targets).sum().item()
 
-            # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            #       % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+            if USE_PROGRESS_BAR:
+                progress_bar(batch_idx, len(self.trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                            % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
-            progress_bar(batch_idx, len(self.trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                        % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+        if not USE_PROGRESS_BAR:    
+            print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                  % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
 
         self.train_losses.append(train_loss/(batch_idx+1))
         self.train_accuracies.append(100.*correct/total)
@@ -158,11 +162,14 @@ class CIFAR10Trainer:
                 _, predicted = outputs.max(1)
                 total += targets.size(0)
                 correct += predicted.eq(targets).sum().item()
-                # print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                #   % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-                progress_bar(batch_idx, len(self.testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                            % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
-        
+
+                if USE_PROGRESS_BAR:
+                    progress_bar(batch_idx, len(self.testloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                                % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+        if not USE_PROGRESS_BAR:
+            print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                  % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))      
         self.test_losses.append(test_loss/(batch_idx+1))
         self.test_accuracies.append(100.*correct/total)
 

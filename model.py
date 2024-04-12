@@ -77,15 +77,15 @@ class ResNet(nn.Module):
     block_act_fn = None
 
     def __init__(self, block, num_blocks, num_classes=10,
-                 image_channels=3, channels=64, scale_fix: bool=None):
+                 image_channels=3, channels=64):
         super(ResNet, self).__init__()
         if self.block_act_fn is None:
             self.block_act_fn = nn.ReLU()
 
         # Note: Different block structures aren't supported just yet.
         # They can be hacked in by just multiplying the linear output dimension by 4.
-        block_count = len(num_blocks)
-        assert(block_count in [3, 4])
+        self.block_count = len(num_blocks)
+        assert(self.block_count in [3, 4])
         self.channels = channels
 
         # k = 3, p = 1
@@ -112,8 +112,7 @@ class ResNet(nn.Module):
 
         self.layers = nn.Sequential(*layer_list)
         # In 3-blocks, this should be 4 * self.channels.
-        if scale is None:
-            scale = 4 if block_count == 3 else 1
+        scale = 4 if self.block_count == 3 else 1
         self.linear = nn.Linear(scale*self.channels, num_classes)
 
     @property
