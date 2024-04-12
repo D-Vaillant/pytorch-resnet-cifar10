@@ -213,6 +213,33 @@ class CIFAR10Trainer:
         
         self.export_results()
 
+class HeavilyAugmentedCIFAR10Trainer(CIFAR10Trainer):
+    def prepare_data(self):
+        logging.info('==> Preparing data..')
+        # Data augmentation scheme.
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(30),
+            transforms.ColorJitter(0.2, 0.2, 0.2, 0.2),
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.ToImage(),
+            transforms.ToDtype(torch.float32, scale=True),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ])
+
+        self.trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+        self.trainloader = torch.utils.data.DataLoader(self.trainset, batch_size=128, shuffle=True, num_workers=2)
+            
+        self.testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+        self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=100, shuffle=False, num_workers=2)
+        
+        self.classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 if __name__ == "__main__":
     parser = create_parser()
