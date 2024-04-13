@@ -16,7 +16,7 @@ import json
 
 from model import *
 
-USE_PROGRESS_BAR = False
+USE_PROGRESS_BAR = True
 
 if USE_PROGRESS_BAR:
     from utils import progress_bar
@@ -31,8 +31,8 @@ def get_unique_identifier():
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
-    parser.add_argument('--epochs', '-e', default=50, type=int, help='epochs to run. in addition.')
-    parser.add_argument('--lr', default=3e-4, type=float, help='learning rate')
+    parser.add_argument('--epochs', '-e', default=200, type=int, help='epochs to run. in addition to whatever the checkpoint')
+    parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--checkpoint', '-c', default=None,
                         help='checkpoint filename to load from. stored in checkpoint/.')
     return parser
@@ -241,10 +241,16 @@ class HeavilyAugmentedCIFAR10Trainer(CIFAR10Trainer):
         
         self.classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
+
 if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
+    model_args = {'num_blocks': [5, 4, 3], 'channels': 64}
 
-    trainer = CIFAR10Trainer(model=SiLUResNet, model_args={'num_blocks': [5, 4, 3], 'channels': 64},
+    model = SiLUResNet(ResidualBlock, **model_args)
+    print(f"Model parameter count: {model.parameter_count}")
+    del model
+
+    trainer = CIFAR10Trainer(model=SiLUResNet, model_args=model_args,
                              epochs=args.epochs, learning_rate=args.lr, checkpoint=args.checkpoint)
     trainer.run()

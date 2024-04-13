@@ -11,8 +11,6 @@ import torch.nn.functional as F
 
 
 class ResidualBlock(nn.Module):
-    """
-    """
     expansion = 1  # Bottleneck uses a different expansion. Not included here.
 
     def __init__(self, input_channels, output_channels, stride=1,
@@ -26,6 +24,7 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv2d(output_channels, output_channels, kernel_size=3,
                                stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(output_channels)
+        # It's two convs+batch, separated by the activation function.
         self.convnet = nn.Sequential(self.conv1, self.bn1, self.act_fn,
                                      self.conv2, self.bn2)
 
@@ -42,6 +41,7 @@ class ResidualBlock(nn.Module):
             )
 
     def forward(self, x):
+        # This is the shortcut: F(x) + x.
         out = self.convnet(x) + self.shortcut(x)
         out = self.act_fn(out)
         return out
@@ -126,6 +126,7 @@ class ResNet(nn.Module):
     def forward(self, x):
         # Trunk is the first conv layer, batch, and activation function.
         out = self.trunk(x)
+        # All of the residual blocks, in a row.
         out = self.layers(out)
         # Hyperparameter: Pooling strategy.
         # out = F.max_pool2d(out, 4)
